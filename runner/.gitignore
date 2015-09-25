@@ -1,0 +1,9 @@
+/Debug/
+/Release/
+/x64/
+/x86/
+/win32/
+*.sdf
+*.opensdf
+*.suo
+*.pdb
