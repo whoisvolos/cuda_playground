@@ -42,11 +42,19 @@ __global__ void generate_random(curandState_t* states, float3* results, const in
 int main(int argc, char *argv[]) {
     atexit([] { _getch(); });
 
+    int devCount;
+    cudaGetDeviceCount(&devCount);
+    for (int i = 0; i < devCount; ++i) {
+        cudaDeviceProp props;
+        cudaGetDeviceProperties(&props, i);
+        printf("%i: %s (compat %i.%i)\n", i, props.name, props.major, props.minor);
+    }
+
     curandState_t* states;
-    int BLOCKS = 128;
-    int TPB = 256;
-    const int samples = 33554432; // 32M rays
-    int TRIALS = 30;
+    int BLOCKS = 256;
+    int TPB = 512;
+    const int samples = 134217728;// 33554432; // 32M rays
+    int TRIALS = 1000;
     StopWatchInterface *hTimer;
 
     cudaSetDevice(0);
@@ -58,7 +66,7 @@ int main(int argc, char *argv[]) {
     checkCudaErrors(cudaPeekAtLastError());
 
     float3* devRaysDirection;
-    CUDA_CALL(cudaMalloc((void **)&devRaysDirection, samples * sizeof(float3)));
+    CUDA_CALL(cudaMalloc((void **)&devRaysDirection, (size_t)samples * sizeof(float3)));
 
     sdkCreateTimer(&hTimer);
     sdkResetTimer(&hTimer);
@@ -71,7 +79,7 @@ int main(int argc, char *argv[]) {
     checkCudaErrors(cudaPeekAtLastError());
     //checkCudaErrors(cudaDeviceSynchronize());
 
-    printf("%f Gigarays/s\n", TRIALS * samples * 1e-9 / sdkGetTimerValue(&hTimer));
+    printf("%f Gigarays/s\n", (float)TRIALS * samples * 1e-9 / sdkGetTimerValue(&hTimer));
 
     //float3* rays = new float3[samples];
     //CUDA_CALL(cudaMemcpy(rays, devRaysDirection, sizeof(float3) * samples, cudaMemcpyDeviceToHost));
