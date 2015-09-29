@@ -21,16 +21,15 @@
     printf("Error at %s:%d\n",__FILE__,__LINE__); \
     return EXIT_FAILURE;}} while(0)
 
-__global__ void random_init(curandState_t* states, unsigned long long seedRad, unsigned long long seedPhi) {
-    int idx = (threadIdx.x + blockIdx.x * blockDim.x) * 2;
-    curand_init(seedRad, idx, 0, &states[idx]);
-    curand_init(seedPhi, idx + 1, 0, &states[idx + 1]);
+__global__ void random_init(curandState_t* states, unsigned long long seed) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, idx, 0, &states[idx]);
 };
 
-__global__ void generate_random(curandState_t* states, float3* results, const int samples) {
+__global__ void generate_random(curandState_t* statesRad, curandState_t* statesPhi, float3* results, const int samples) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    curandState_t stateRad = states[idx * 2];
-    curandState_t statePhi = states[idx * 2 + 1];
+    curandState_t stateRad = statesRad[idx];
+    curandState_t statePhi = statesPhi[idx];
     while (idx < samples) {
         float r = curand_uniform(&stateRad);
         float phi = curand_uniform(&statePhi) * 2 * CUDART_PI_F;
@@ -51,21 +50,24 @@ int main(int argc, char *argv[]) {
         printf("%i: %s (compat %i.%i)\n", i, props.name, props.major, props.minor);
     }
 
-    curandState_t* states;
+    curandState_t* statesRad;
+    curandState_t* statesPhi;
     int BLOCKS = 256;
     int TPB = 512;
     const int samples = BLOCKS * TPB * 256;
     printf("Trials: %i, %i Mb\n", samples, (samples * sizeof(float3) + BLOCKS * TPB * 2 * sizeof(curandState_t)) / 1024 / 1024);
-    int TRIALS = 10;
+    int TRIALS = 64;
     StopWatchInterface *hTimer;
 
     cudaSetDevice(0);
     cudaSetDeviceFlags(cudaDeviceScheduleSpin);
 
-    checkCudaErrors(cudaMalloc((void **)&states, BLOCKS * TPB * sizeof(curandState_t) * 2));
+    checkCudaErrors(cudaMalloc((void **)&statesRad, BLOCKS * TPB * sizeof(curandState_t)));
+    checkCudaErrors(cudaMalloc((void **)&statesPhi, BLOCKS * TPB * sizeof(curandState_t)));
 
     printf("Initializing random\n");
-    random_init << <BLOCKS, TPB >> >(states, 0l, 1234l);
+    random_init << <BLOCKS, TPB >> >(statesRad, 0l);
+    random_init << <BLOCKS, TPB >> >(statesPhi, 1234l);
     checkCudaErrors(cudaDeviceSynchronize());
     checkCudaErrors(cudaPeekAtLastError());
     printf("Initializing random done\n");
@@ -78,7 +80,7 @@ int main(int argc, char *argv[]) {
     sdkStartTimer(&hTimer);
 
     for (int i = 0; i < TRIALS; ++i) {
-        generate_random << <BLOCKS, TPB >> >(states, devRaysDirection, samples);
+        generate_random << <BLOCKS, TPB >> >(statesRad, statesPhi, devRaysDirection, samples);
         checkCudaErrors(cudaDeviceSynchronize());
         checkCudaErrors(cudaPeekAtLastError());
         printf("Done trial %i\n", i);
@@ -93,7 +95,8 @@ int main(int argc, char *argv[]) {
     
     cudaFree(devRaysDirection);
 
-    cudaFree(states);
+    cudaFree(statesRad);
+    cudaFree(statesPhi);
 
     return EXIT_SUCCESS;
 }
